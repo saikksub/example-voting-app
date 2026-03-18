@@ -1,67 +1,44 @@
 pipeline {
-    agent { label 'Jenkins-agent' }
-
-    tools {
-        jdk 'java17'
-        maven 'maven3'
+    agent {
+        label 'Jenkins-agent'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // We use the 'scm' variable so it uses the repo YOU configured in the Jenkins UI
                 checkout scm
-                sh 'ls -R'
             }
         }
 
-        stage('Build Application') {
+        stage('Build .NET Worker') {
             steps {
-                script {
-                    // Search for Maven (Java)
-                    def pomPath = sh(script: 'find . -name "pom.xml" -not -path "*/target/*" | head -n 1', returnStdout: true).trim()
-                    
-                    if (pomPath) {
-                        def pomDir = pomPath.replace('/pom.xml', '')
-                        if (pomDir == "") pomDir = "."
-                        echo "Detected Java project at: ${pomDir}"
-                        dir(pomDir) {
-                            sh 'mvn clean install -DskipTests'
-                        }
-                    } 
-                    // Search for .NET (C#) if Java isn't found
-                    else {
-                        def dotnetPath = sh(script: 'find . -name "*.csproj" | head -n 1', returnStdout: true).trim()
-                        if (dotnetPath) {
-                            def dotnetDir = dotnetPath.split('/')[0..-2].join('/')
-                            echo "Detected .NET project at: ${dotnetDir}. Note: Requires .NET SDK on Agent."
-                            dir(dotnetDir) {
-                                // Only run if dotnet is installed on agent
-                                sh 'dotnet build'
-                            }
-                        } else {
-                            error "No Java (pom.xml) or .NET (.csproj) files found!"
-                        }
-                    }
+                dir('worker') {
+                    echo 'Restoring dependencies...'
+                    sh 'dotnet restore'
+                    echo 'Building the project...'
+                    sh 'dotnet build --configuration Release'
                 }
             }
         }
 
-        stage('Tests') {
+        stage('Test') {
             steps {
-                script {
-                    def pomPath = sh(script: 'find . -name "pom.xml" -not -path "*/target/*" | head -n 1', returnStdout: true).trim()
-                    if (pomPath) {
-                        dir(pomPath.replace('/pom.xml', '')) {
-                            sh 'mvn test'
-                        }
-                    }
+                dir('worker') {
+                    echo 'Running tests...'
+                    // Note: This only runs if you have a test project defined
+                    sh 'dotnet test --no-build --configuration Release'
                 }
             }
         }
     }
 
     post {
+        success {
+            echo 'SUCCESS: .NET Worker built successfully!'
+        }
+        failure {
+            echo 'FAILURE: Check if .NET SDK is installed on the Agent.'
+        }
         always {
             cleanWs()
         }
