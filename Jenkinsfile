@@ -1,12 +1,13 @@
 pipeline {
-    agent { label 'Jenkins-Agent' } // Matches your hyphenated label
+    agent { label 'Jenkins-Agent' } 
 
     environment {
-        // We define the variable here so the echo command can find it
+        // Defining your repo URL as a variable to avoid "MissingProperty" errors
         REPO_URL = 'https://github.com/sandeepaksm/example-voting-app.git'
     }
 
     tools {
+        // These MUST match the names in Manage Jenkins -> Tools exactly
         maven 'Maven3' 
         jdk 'jdk17'    
     }
@@ -21,7 +22,6 @@ pipeline {
 
         stage('2. Checkout from SCM') {
             steps {
-                // Now REPO_URL is defined, so this won't crash
                 echo "Fetching code from: ${REPO_URL}"
                 git branch: 'main', url: "${REPO_URL}"
             }
@@ -29,29 +29,38 @@ pipeline {
 
         stage('3. Unit Testing') {
             steps {
-                echo 'Executing Maven tests...'
-                sh 'mvn test'
+                echo 'Moving into worker directory and executing Maven tests...'
+                // dir() is the secret sauce here—it moves the command into the subfolder
+                dir('worker') {
+                    sh 'mvn test'
+                }
             }
         }
 
         stage('4. Build & Package') {
             steps {
                 echo 'Compiling code and creating artifact...'
-                sh 'mvn clean package -DskipTests'
+                dir('worker') {
+                    sh 'mvn clean package -DskipTests'
+                }
             }
         }
 
         stage('5. Archive Artifacts') {
             steps {
                 echo 'Saving the build results in Jenkins...'
-                archiveArtifacts artifacts: '**/target/*.jar', allowEmptyArchive: true
+                // This captures the JAR file created in the worker/target folder
+                archiveArtifacts artifacts: 'worker/target/*.jar', allowEmptyArchive: true
             }
         }
     }
 
     post {
+        success {
+            echo 'SUCCESS: The application was built and packaged!'
+        }
         failure {
-            echo 'Build failed! Check the Console Output for Maven errors.'
+            echo 'FAILURE: Check the Console Output for Maven or Directory errors.'
         }
     }
 }
